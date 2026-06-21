@@ -16,9 +16,9 @@ spec:
     spec:
       containers:
       - name: todo-api
-        image: cronosjl/todo-api:v1.0.0
+        image: kennethreitz/httpbin
         ports:
-        - containerPort: 3000
+        - containerPort: 80
           name: http
         env:
         - name: PORT
@@ -34,13 +34,13 @@ spec:
             memory: "256Mi"
         livenessProbe:
           httpGet:
-            path: /health
+            path: /get
             port: http
           initialDelaySeconds: 10
           periodSeconds: 10
         readinessProbe:
           httpGet:
-            path: /health
+            path: /get
             port: http
           initialDelaySeconds: 5
           periodSeconds: 5
