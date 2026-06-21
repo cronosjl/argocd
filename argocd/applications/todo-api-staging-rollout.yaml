@@ -8,7 +8,7 @@ spec:
   source:
     repoURL: https://github.com/cronosjl/argocd.git
     targetRevision: HEAD
-    path: apps/todo-api/overlays/staging-rollout
+    path: apps/todo-api/rollouts/staging
   destination:
     server: https://kubernetes.default.svc
     namespace: todo-api-staging
