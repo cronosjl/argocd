@@ -10,8 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.CI_TOKEN }}
 
       - name: Update image tag
         run: |
@@ -19,8 +17,8 @@ jobs:
 
       - name: Commit & Push
         run: |
-          git config user.email "louis@example.com"
-          git config user.name "Louis CI"
+          git config user.email "jeanddjl@gmail.com"
+          git config user.name "cronosjl"
           git add apps/todo-api/
           git commit -m "ci: update image [skip ci]" || true
-          git push https://x-access-token:${{ secrets.CI_TOKEN }}@github.com/cronosjl/argocd.git main
+          git push https://cronosjl:${{ secrets.CI_TOKEN }}@github.com/cronosjl/argocd.git main
