@@ -5,3 +5,4 @@ resources:
 - namespaces.yaml
 - rbac.yaml
 - network-policy.yaml
+- sealed-secret.yaml
