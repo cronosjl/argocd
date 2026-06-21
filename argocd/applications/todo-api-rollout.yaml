@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: todo-api-staging-rollout
+  name: todo-api-rollout
   namespace: argocd
 spec:
   project: default
