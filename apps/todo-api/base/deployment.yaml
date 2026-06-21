@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: todo-api
-        image: python:3.11-slim
+        image: cronosjl/todo-api:v1.0.0
         ports:
         - containerPort: 3000
           name: http
