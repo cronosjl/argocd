@@ -2,7 +2,7 @@
 
 Projet fil rouge GitOps : déploiement d'une API REST sur Kubernetes avec ArgoCD, Kustomize et Argo Rollouts.
 
-**Formateur :** Samuel Rohaut | **Team :** `corp-platform`
+**Team :** `corp-platform`
 
 ---
 
