@@ -6,8 +6,8 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/cronosjl/argocd.git
-    targetRevision: HEAD
+    repoURL: https://github.com/cronosjl/gitops-argocd-platform.git
+    targetRevision: main
     path: infrastructure/kubernetes
   destination:
     server: https://kubernetes.default.svc

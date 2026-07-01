@@ -1,0 +1,87 @@
+# Fichiers locaux
+*.docx
+
+# Secrets
+*.env
+*.secret
+*.pem
+*.key
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+
+# Kubernetes / Helm
+charts/
+tmp/
+
+
+# ─────────────────────────────────────
+# Secrets & credentials
+# ─────────────────────────────────────
+*.pem
+*.key
+*.p12
+*.pfx
+.env
+.env.*
+credentials
+aws_credentials
+
+# ─────────────────────────────────────
+# Terraform
+# ─────────────────────────────────────
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+terraform.tfvars
+!terraform/terraform.tfvars.example
+
+# ─────────────────────────────────────
+# Logs
+# ─────────────────────────────────────
+logs/
+*.log
+
+# ─────────────────────────────────────
+# macOS
+# ─────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V8
+.Trashes
+
+# ─────────────────────────────────────
+# IDE
+# ─────────────────────────────────────
+.idea/
+.vscode/
+*.iml
+
+# ─────────────────────────────────────
+# Secrets K8s bruts (ne jamais committer — utiliser SealedSecret)
+# ─────────────────────────────────────
+secret.yaml
+*-secret-raw.yaml
+*-secret.plain.yaml
+
+# ─────────────────────────────────────
+# Claude Code (settings locaux uniquement)
+# ─────────────────────────────────────
+.claude/settings.local.json
+
+# ─────────────────────────────────────
+# Fichiers temporaires
+# ─────────────────────────────────────
+*.tmp
+*.bak
+*.swp
+*~
