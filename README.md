@@ -2,7 +2,7 @@
 
 Projet fil rouge GitOps : déploiement d'une API REST sur Kubernetes avec ArgoCD, Kustomize et Argo Rollouts.
 
-**Team :** `corp-platform`
+**Team :** `argocd-platform`
 
 ---
 
@@ -195,7 +195,7 @@ cd gitops-argocd-platform
 ### 2. Créer le cluster k3d
 
 ```bash
-k3d cluster create corp-platform \
+k3d cluster create argocd-platform \
   --port "8080:80@loadbalancer" \
   --port "8443:443@loadbalancer"
 
@@ -501,7 +501,7 @@ kubectl -n todo-api-staging get events --sort-by='.lastTimestamp'
 ```bash
 argocd app delete todo-api-dev todo-api-staging todo-api-rollout infrastructure --yes
 kubectl delete ns todo-api-dev todo-api-staging
-k3d cluster delete corp-platform
+k3d cluster delete argocd-platform
 ```
 
 ---
