@@ -50,7 +50,7 @@ Toute modification de l'infrastructure passe par un commit.
 
 | Composant                | Choix                                           |
 |--------------------------|-------------------------------------------------|
-| Orchestration            | Kubernetes local via **k3d**                    |
+| Orchestration            | Kubernetes local via **minikube**               |
 | GitOps                   | **ArgoCD** (auto-sync, prune, selfHeal)         |
 | Packaging manifests      | **Kustomize** (base + overlays)                 |
 | CI                       | **GitHub Actions**                              |
@@ -136,14 +136,14 @@ gitops-argocd-platform/
 
 | Outil       | Version min | Installation            |
 |-------------|-------------|-------------------------|
-| `k3d`       | 5.0+        | `brew install k3d`      |
+| `minikube`  | 1.30+       | `brew install minikube` |
 | `kubectl`   | 1.25+       | `brew install kubectl`  |
 | `kustomize` | 5.0+        | `brew install kustomize`|
 | `argocd`    | 2.8+        | `brew install argocd`   |
 | `kubeseal`  | any         | `brew install kubeseal` |
 
 ```bash
-k3d version && kubectl version --client && kustomize version
+minikube version && kubectl version --client && kustomize version
 argocd version --client && kubeseal --version
 ```
 
@@ -158,12 +158,10 @@ git clone https://github.com/cronosjl/gitops-argocd-platform.git
 cd gitops-argocd-platform
 ```
 
-### 2. Créer le cluster k3d
+### 2. Démarrer le cluster minikube
 
 ```bash
-k3d cluster create argocd-platform \
-  --port "8080:80@loadbalancer" \
-  --port "8443:443@loadbalancer"
+minikube start --driver=docker
 
 kubectl get nodes
 ```
@@ -444,7 +442,7 @@ kubectl -n todo-api-prod get events --sort-by='.lastTimestamp'
 ```bash
 argocd app delete todo-api-dev todo-api-prod infrastructure --yes
 kubectl delete ns todo-api-dev todo-api-prod
-k3d cluster delete argocd-platform
+minikube stop
 ```
 
 ---

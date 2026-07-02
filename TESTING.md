@@ -2,7 +2,7 @@
 
 Tests de bout en bout : validation Kustomize → bootstrap ArgoCD → déploiement → tests fonctionnels → self-heal → sécurité.
 
-**Cluster :** k3d
+**Cluster :** minikube
 **Image déployée :** `kennethreitz/httpbin`
 **Environnements :** `dev` (1 replica) · `prod` (3 replicas)
 **Endpoint de santé :** `GET /get`
