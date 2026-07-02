@@ -1,6 +1,6 @@
 # GitOps ArgoCD Platform — Todo API
 
-Projet fil rouge GitOps : déploiement d'une API REST sur Kubernetes avec ArgoCD, Kustomize et Argo Rollouts.
+Projet fil rouge GitOps : déploiement d'une API REST sur Kubernetes avec ArgoCD et Kustomize.
 
 **Team :** `argocd-platform`
 
@@ -27,7 +27,7 @@ Projet fil rouge GitOps : déploiement d'une API REST sur Kubernetes avec ArgoCD
 
 ## Vue d'ensemble
 
-Ce repo est le **repo GitOps** : il ne contient pas le code applicatif de la todo-api, mais tous les **manifests Kubernetes** nécessaires à son déploiement. ArgoCD surveille ce repo en continu et synchronise l'état du cluster avec l'état Git.
+Ce repo est le **repo GitOps** : il ne contient pas le code applicatif, mais tous les **manifests Kubernetes** nécessaires au déploiement de la todo-api. ArgoCD surveille ce repo en continu et synchronise l'état du cluster avec l'état Git.
 
 ```
 Principe fondamental : Git est la source de vérité.
@@ -42,7 +42,7 @@ Toute modification de l'infrastructure passe par un commit.
 | `/todos`     | POST    | Créer un todo     |
 | `/todos/:id` | DELETE  | Supprimer un todo |
 
-**Image Docker :** `docker.io/shatri/todo-api-node`
+**Image Docker :** `kennethreitz/httpbin`
 
 ---
 
@@ -50,11 +50,11 @@ Toute modification de l'infrastructure passe par un commit.
 
 | Composant                | Choix                                           |
 |--------------------------|-------------------------------------------------|
-| Orchestration            | Kubernetes local via **k3d**                    |
+| Orchestration            | Kubernetes local via **minikube**               |
 | GitOps                   | **ArgoCD** (auto-sync, prune, selfHeal)         |
 | Packaging manifests      | **Kustomize** (base + overlays)                 |
 | CI                       | **GitHub Actions**                              |
-| Déploiements progressifs | **Argo Rollouts** (blue/green ✅, canary TODO)  |
+| Déploiements progressifs | **Argo Rollouts** (blue/green TODO, canary TODO) |
 | IaC                      | Manifests K8s dans `infrastructure/kubernetes/` |
 | Secrets                  | **Sealed Secrets**                              |
 
@@ -71,17 +71,12 @@ graph TD
     GH -->|polling / webhook| ARGO["ArgoCD\nnamespace: argocd"]
 
     ARGO --> APP1["todo-api-dev\napps/todo-api/overlays/dev"]
-    ARGO --> APP2["todo-api-staging\napps/todo-api/overlays/staging"]
-    ARGO --> APP3["todo-api-rollout\napps/todo-api/rollouts/staging"]
-    ARGO --> APP4["infrastructure\ninfrastructure/kubernetes"]
+    ARGO --> APP2["todo-api-prod\napps/todo-api/overlays/prod"]
+    ARGO --> APP3["infrastructure\ninfrastructure/kubernetes"]
 
     APP1 --> NS1["namespace: todo-api-dev\nDeployment — 1 replica"]
-    APP2 --> NS2["namespace: todo-api-staging\nDeployment — 3 replicas"]
-    APP3 --> NS2
-    APP4 --> INFRA["Namespaces · RBAC\nNetworkPolicy · SealedSecrets"]
-
-    NS2 --> SVC1["svc: todo-api-active\n100% trafic"]
-    NS2 --> SVC2["svc: todo-api-preview\n0% trafic — validation"]
+    APP2 --> NS2["namespace: todo-api-prod\nDeployment — 3 replicas"]
+    APP3 --> INFRA["Namespaces · RBAC\nNetworkPolicy · SealedSecrets"]
 ```
 
 ### Flux CI → GitOps
@@ -90,12 +85,11 @@ graph TD
 flowchart TD
     A["git push\n(code applicatif)"] --> B["GitHub Actions"]
     B --> C["TODO: build image Docker\ntag = SHA commit"]
-    B --> D["TODO: push → registry\ndocker.io/shatri/todo-api-node"]
+    B --> D["TODO: push → registry"]
     B --> E["TODO: commit nouveau tag\ndans ce repo GitOps"]
     E --> F["ArgoCD détecte le changement\npolling toutes les 3 min"]
     F --> G["kustomize build\napply diff sur le cluster"]
-    G --> H["Argo Rollouts\ngère la progression blue/green"]
-    H --> I["Cluster converge\nvers l'état désiré"]
+    G --> H["Cluster converge\nvers l'état désiré"]
 ```
 
 ---
@@ -110,26 +104,17 @@ gitops-argocd-platform/
 │       │   ├── deployment.yaml
 │       │   ├── service.yaml
 │       │   └── kustomization.yaml
-│       ├── overlays/
-│       │   ├── dev/                     # 1 replica — namespace todo-api-dev
-│       │   │   ├── kustomization.yaml
-│       │   │   └── patch-replicas.yaml
-│       │   ├── staging/                 # 3 replicas — namespace todo-api-staging
-│       │   │   ├── kustomization.yaml
-│       │   │   └── patch-replicas.yaml
-│       │   └── staging-rollout/         # Rollout CRD overlay (blue/green)
-│       │       ├── kustomization.yaml
-│       │       └── rollout.yaml
-│       └── rollouts/
-│           └── staging/                 # Blue/Green standalone (app ArgoCD dédiée)
+│       └── overlays/
+│           ├── dev/                     # 1 replica — namespace todo-api-dev
+│           │   ├── kustomization.yaml
+│           │   └── patch-replicas.yaml
+│           └── prod/                    # 3 replicas — namespace todo-api-prod
 │               ├── kustomization.yaml
-│               ├── rollout.yaml
-│               └── service.yaml         # Services: active + preview
+│               └── patch-replicas.yaml
 ├── argocd/
 │   └── applications/                    # Application CRDs ArgoCD
 │       ├── todo-api-dev.yaml
-│       ├── todo-api-staging.yaml
-│       ├── todo-api-rollout.yaml
+│       ├── todo-api-prod.yaml
 │       └── infrastructure.yaml
 ├── infrastructure/
 │   └── kubernetes/                      # IaC : namespaces, RBAC, NetworkPolicy
@@ -151,15 +136,14 @@ gitops-argocd-platform/
 
 | Outil       | Version min | Installation            |
 |-------------|-------------|-------------------------|
-| `k3d`       | 5.0+        | `brew install k3d`      |
+| `minikube`  | 1.30+       | `brew install minikube` |
 | `kubectl`   | 1.25+       | `brew install kubectl`  |
 | `kustomize` | 5.0+        | `brew install kustomize`|
 | `argocd`    | 2.8+        | `brew install argocd`   |
 | `kubeseal`  | any         | `brew install kubeseal` |
 
 ```bash
-# Vérifier les versions
-k3d version && kubectl version --client && kustomize version
+minikube version && kubectl version --client && kustomize version
 argocd version --client && kubeseal --version
 ```
 
@@ -174,12 +158,10 @@ git clone https://github.com/cronosjl/gitops-argocd-platform.git
 cd gitops-argocd-platform
 ```
 
-### 2. Créer le cluster k3d
+### 2. Démarrer le cluster minikube
 
 ```bash
-k3d cluster create argocd-platform \
-  --port "8080:80@loadbalancer" \
-  --port "8443:443@loadbalancer"
+minikube start --driver=docker
 
 kubectl get nodes
 ```
@@ -189,46 +171,38 @@ kubectl get nodes
 ```bash
 kubectl create namespace argocd
 kubectl apply -n argocd \
-  -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+  -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml \
+  --server-side
 
 kubectl wait --for=condition=available --timeout=120s \
   deployment/argocd-server -n argocd
 ```
 
-### 4. Accéder à l'UI ArgoCD
+### 4. Installer Sealed Secrets
 
 ```bash
-# Port-forward (dans un autre terminal)
-kubectl port-forward svc/argocd-server -n argocd 8080:443
-
-# Récupérer le mot de passe admin
-kubectl -n argocd get secret argocd-initial-admin-secret \
-  -o jsonpath="{.data.password}" | base64 -d && echo
-
-# Login CLI
-argocd login localhost:8080 --insecure \
-  --username admin \
-  --password $(kubectl -n argocd get secret argocd-initial-admin-secret \
-    -o jsonpath="{.data.password}" | base64 -d)
+curl -sL https://github.com/bitnami-labs/sealed-secrets/releases/latest/download/controller.yaml | kubectl apply -f -
+kubectl wait --for=condition=available --timeout=60s deployment/sealed-secrets-controller -n kube-system
 ```
 
-→ UI disponible sur **https://localhost:8080**
-
-### 5. Installer Argo Rollouts
+### 5. Accéder à l'UI ArgoCD
 
 ```bash
-kubectl create namespace argo-rollouts
-kubectl apply -n argo-rollouts \
-  -f https://github.com/argoproj/argo-rollouts/releases/latest/download/install.yaml
+kubectl port-forward svc/argocd-server -n argocd 8080:443 &
+
+ARGOCD_PWD=$(kubectl -n argocd get secret argocd-initial-admin-secret \
+  -o jsonpath="{.data.password}" | base64 -d)
+
+argocd login localhost:8080 --insecure --username admin --password $ARGOCD_PWD
+echo "UI → https://localhost:8080  (admin / $ARGOCD_PWD)"
 ```
 
 ### 6. Déployer les Applications ArgoCD
 
 ```bash
 kubectl apply -f argocd/applications/ -n argocd
-
-# Vérifier la synchronisation
 argocd app list
+# Attendu : todo-api-dev, todo-api-prod, infrastructure — Synced + Healthy
 ```
 
 ArgoCD synchronise automatiquement tous les environnements depuis `main`.
@@ -237,20 +211,18 @@ ArgoCD synchronise automatiquement tous les environnements depuis `main`.
 
 ## Environnements
 
-| Environnement | Namespace          | Replicas | Source                             | Type       |
-|---------------|--------------------|----------|------------------------------------|------------|
-| dev           | `todo-api-dev`     | 1        | `apps/todo-api/overlays/dev`       | Deployment |
-| staging       | `todo-api-staging` | 3        | `apps/todo-api/overlays/staging`   | Deployment |
-| staging B/G   | `todo-api-staging` | 2        | `apps/todo-api/rollouts/staging`   | Rollout    |
+| Environnement | Namespace        | Replicas | Source                           | Type       |
+|---------------|------------------|----------|----------------------------------|------------|
+| dev           | `todo-api-dev`   | 1        | `apps/todo-api/overlays/dev`     | Deployment |
+| prod          | `todo-api-prod`  | 3        | `apps/todo-api/overlays/prod`    | Deployment |
 
 ### Applications ArgoCD
 
-| Application        | Source                           | Namespace cible    |
-|--------------------|----------------------------------|--------------------|
-| `todo-api-dev`     | `apps/todo-api/overlays/dev`     | `todo-api-dev`     |
-| `todo-api-staging` | `apps/todo-api/overlays/staging` | `todo-api-staging` |
-| `todo-api-rollout` | `apps/todo-api/rollouts/staging` | `todo-api-staging` |
-| `infrastructure`   | `infrastructure/kubernetes`      | `default`          |
+| Application      | Source                           | Namespace cible  |
+|------------------|----------------------------------|------------------|
+| `todo-api-dev`   | `apps/todo-api/overlays/dev`     | `todo-api-dev`   |
+| `todo-api-prod`  | `apps/todo-api/overlays/prod`    | `todo-api-prod`  |
+| `infrastructure` | `infrastructure/kubernetes`      | `default`        |
 
 Toutes configurées avec `prune: true` et `selfHeal: true`.
 
@@ -261,13 +233,9 @@ Toutes configurées avec `prune: true` et `selfHeal: true`.
 kubectl port-forward svc/todo-api -n todo-api-dev 3000:80
 # → http://localhost:3000
 
-# Staging — version active
-kubectl port-forward svc/todo-api-active -n todo-api-staging 3001:80
+# Prod
+kubectl port-forward svc/todo-api -n todo-api-prod 3001:80
 # → http://localhost:3001
-
-# Staging — version preview (blue/green)
-kubectl port-forward svc/todo-api-preview -n todo-api-staging 3002:80
-# → http://localhost:3002
 ```
 
 ---
@@ -306,15 +274,15 @@ git push -u origin feature/<description>
 <type>(<scope>): <description courte>
 ```
 
-| Type       | Scope exemples                   |
-|------------|----------------------------------|
-| `feat`     | `kustomize`, `argocd`, `rollouts`|
-| `fix`      | `argocd`, `ci`, `kubernetes`     |
-| `chore`    | `ci`, `release`                  |
-| `docs`     | *(pas de scope)*                 |
-| `ci`       | `workflows`                      |
-| `infra`    | `kubernetes`                     |
-| `security` | `secrets`, `rbac`                |
+| Type       | Scope exemples                    |
+|------------|-----------------------------------|
+| `feat`     | `kustomize`, `argocd`, `rollouts` |
+| `fix`      | `argocd`, `ci`, `kubernetes`      |
+| `chore`    | `ci`, `release`                   |
+| `docs`     | *(pas de scope)*                  |
+| `ci`       | `workflows`                       |
+| `infra`    | `kubernetes`                      |
+| `security` | `secrets`, `rbac`                 |
 
 ---
 
@@ -322,7 +290,7 @@ git push -u origin feature/<description>
 
 ### État actuel
 
-`.github/workflows/deploy.yml` : validation uniquement.
+`.github/workflows/deploy.yml` : validation Kustomize uniquement.
 
 ### Cible
 
@@ -334,7 +302,7 @@ on:
 jobs:
   build-and-push:
     # Build image → tag = github.sha
-    # Push → docker.io/shatri/todo-api-node:<sha>
+    # Push → registry
     # kustomize edit set image → commit dans ce repo
     # ArgoCD détecte → sync automatique
 ```
@@ -351,43 +319,24 @@ jobs:
 
 ---
 
-## Déploiements progressifs
+### Blue/Green (TODO)
 
-### Blue/Green ✅
-
-Configuré dans `apps/todo-api/rollouts/staging/`.
+Stratégie : deux versions tournent en parallèle. La bascule est manuelle et instantanée. Rollback en une commande.
 
 ```mermaid
 flowchart TD
     A["Nouvelle image committée dans Git"] --> B["ArgoCD sync"]
     B --> C{"Blue/Green\nargo rollouts"}
-    C --> D["todo-api-active\nversion stable — 100% trafic"]
-    C --> E["todo-api-preview\nnouvelle version — 0% trafic"]
-    E --> F["Validation manuelle\ntest de la version preview"]
-    F -->|kubectl argo rollouts promote| G["Bascule instantanée\nactive ← nouvelle version"]
-    G --> H["Anciens pods supprimés\naprès 30s"]
-    F -->|kubectl argo rollouts abort| I["Rollback\nactive reste sur l'ancienne version"]
-```
-
-```bash
-# Observer
-kubectl argo rollouts get rollout todo-api -n todo-api-staging
-
-# Promouvoir
-kubectl argo rollouts promote todo-api -n todo-api-staging
-
-# Rollback
-kubectl argo rollouts abort todo-api -n todo-api-staging
-kubectl argo rollouts undo todo-api -n todo-api-staging
-
-# Dashboard
-kubectl argo rollouts dashboard -n todo-api-staging
-# → http://localhost:3100
+    C --> D["version stable — 100% trafic"]
+    C --> E["nouvelle version — 0% trafic (preview)"]
+    E --> F["Validation manuelle"]
+    F -->|promote| G["Bascule instantanée"]
+    F -->|abort| I["Rollback — ancienne version"]
 ```
 
 ### Canary (TODO)
 
-Prochaine étape : stratégie canary 10% → 50% → 100%.
+Stratégie : montée en charge progressive — 10% → 50% → 100%, rollback automatique si métriques dégradées.
 
 ---
 
@@ -395,12 +344,12 @@ Prochaine étape : stratégie canary 10% → 50% → 100%.
 
 Les ressources d'infrastructure sont dans `infrastructure/kubernetes/` et déployées par l'Application ArgoCD `infrastructure`.
 
-| Fichier              | Contenu                             |
-|----------------------|-------------------------------------|
-| `namespaces.yaml`    | Namespaces applicatifs              |
-| `rbac.yaml`          | ServiceAccount, Role, RoleBinding   |
-| `network-policy.yaml`| Isolation réseau entre namespaces   |
-| `sealed-secret.yaml` | Secrets chiffrés                    |
+| Fichier               | Contenu                             |
+|-----------------------|-------------------------------------|
+| `namespaces.yaml`     | Namespaces applicatifs              |
+| `rbac.yaml`           | ServiceAccount, Role, RoleBinding   |
+| `network-policy.yaml` | Isolation réseau entre namespaces   |
+| `sealed-secret.yaml`  | Secrets chiffrés                    |
 
 ```bash
 # Modifier l'infra
@@ -450,8 +399,7 @@ Chaque namespace a une `NetworkPolicy` bloquant tout trafic non autorisé explic
 
 ```bash
 kustomize build apps/todo-api/overlays/dev
-kustomize build apps/todo-api/overlays/staging
-kustomize build apps/todo-api/rollouts/staging
+kustomize build apps/todo-api/overlays/prod
 kustomize build infrastructure/kubernetes
 ```
 
@@ -460,94 +408,25 @@ kustomize build infrastructure/kubernetes
 ```bash
 argocd app list
 argocd app sync todo-api-dev
-argocd app sync todo-api-staging
-argocd app sync todo-api-rollout
+argocd app sync todo-api-prod
 argocd app sync infrastructure
-argocd app get todo-api-staging
+argocd app get todo-api-prod
 ```
 
 ### Cluster
 
 ```bash
 kubectl -n todo-api-dev get deploy,po,svc
-kubectl -n todo-api-staging get deploy,po,svc
-kubectl argo rollouts list rollouts -n todo-api-staging
-kubectl -n todo-api-staging get events --sort-by='.lastTimestamp'
+kubectl -n todo-api-prod get deploy,po,svc
+kubectl -n todo-api-prod get events --sort-by='.lastTimestamp'
 ```
 
 ### Nettoyage
 
 ```bash
-argocd app delete todo-api-dev todo-api-staging todo-api-rollout infrastructure --yes
-kubectl delete ns todo-api-dev todo-api-staging
-k3d cluster delete argocd-platform
-```
-
----
-
-## Choix techniques justifiés
-
-**Kustomize plutôt que Helm**
-Kustomize est natif Kubernetes, sans moteur de templates supplémentaire. Il surcharge uniquement ce qui change par overlay (replicas, namespace, image tag) sans dupliquer les manifests de base.
-
-**Blue/Green plutôt que Rolling Update**
-La bascule est instantanée et 100% réversible : l'ancienne version reste active jusqu'à la promotion manuelle. Zéro downtime, rollback en une commande.
-
-**ArgoCD pour le GitOps**
-UI riche, gestion déclarative des Applications via CRDs, visibilité immédiate sur l'état de sync et les diffs Git vs cluster.
-
-**Manifests K8s pour l'IaC**
-Pour les ressources Kubernetes (namespaces, RBAC, NetworkPolicy), des manifests gérés par ArgoCD suffisent et évitent la complexité d'un Terraform Controller.
-
-**Git Flow**
-Sépare le travail en cours (`feature/*`) du code stable (`main`/`develop`), avec traçabilité via les PRs et historique Git propre pour le livrable.
-plication
-- `Role` minimal : lecture seule (pods, configmaps, secrets)
-- Pas d'accès cross-namespace
-
-### Network Policies
-
-Chaque namespace a une `NetworkPolicy` bloquant tout trafic non autorisé explicitement.
-
----
-
-## Commandes utiles
-
-### Kustomize
-
-```bash
-kustomize build apps/todo-api/overlays/dev
-kustomize build apps/todo-api/overlays/staging
-kustomize build apps/todo-api/rollouts/staging
-kustomize build infrastructure/kubernetes
-```
-
-### ArgoCD
-
-```bash
-argocd app list
-argocd app sync todo-api-dev
-argocd app sync todo-api-staging
-argocd app sync todo-api-rollout
-argocd app sync infrastructure
-argocd app get todo-api-staging
-```
-
-### Cluster
-
-```bash
-kubectl -n todo-api-dev get deploy,po,svc
-kubectl -n todo-api-staging get deploy,po,svc
-kubectl argo rollouts list rollouts -n todo-api-staging
-kubectl -n todo-api-staging get events --sort-by='.lastTimestamp'
-```
-
-### Nettoyage
-
-```bash
-argocd app delete todo-api-dev todo-api-staging todo-api-rollout infrastructure --yes
-kubectl delete ns todo-api-dev todo-api-staging
-k3d cluster delete argocd-platform
+argocd app delete todo-api-dev todo-api-prod infrastructure --yes
+kubectl delete ns todo-api-dev todo-api-prod
+minikube stop
 ```
 
 ---

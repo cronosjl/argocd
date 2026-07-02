@@ -2,7 +2,7 @@
 
 Tests de bout en bout : validation Kustomize → bootstrap ArgoCD → déploiement → tests fonctionnels → self-heal → sécurité.
 
-**Cluster :** k3d
+**Cluster :** minikube
 **Image déployée :** `kennethreitz/httpbin`
 **Environnements :** `dev` (1 replica) · `prod` (3 replicas)
 **Endpoint de santé :** `GET /get`
@@ -62,7 +62,8 @@ Chaque commande doit se terminer sans erreur et sans warning.
 - Probes sur `/get` (pas `/health`)
 
 **Infrastructure :**
-- Namespaces `todo-api-dev`, `todo-api-prod` et `monitoring` présents
+- Namespaces `todo-api-prod` et `monitoring` déclarés en IaC (`namespaces.yaml`)
+- `todo-api-dev` créé automatiquement par ArgoCD (`CreateNamespace=true`)
 - RBAC : `ServiceAccount`, `Role`, `RoleBinding` dans `todo-api-prod`
 - `SealedSecret` présent avec `encryptedData`
 - `NetworkPolicy` ingress sur port `80`
@@ -199,7 +200,10 @@ Readiness: http-get http://:http/get
 ### 3.5 Infrastructure
 
 ```bash
+# todo-api-dev est créé par ArgoCD (CreateNamespace=true), pas par IaC
+# todo-api-prod et monitoring sont déclarés dans infrastructure/kubernetes/namespaces.yaml
 kubectl get ns todo-api-dev todo-api-prod monitoring
+
 kubectl get networkpolicies -A
 kubectl get roles,rolebindings -n todo-api-prod
 kubectl get sealedsecrets -A
