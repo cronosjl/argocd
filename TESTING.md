@@ -1,8 +1,8 @@
 # Guide de Test — GitOps ArgoCD Platform
 
-Tests de bout en bout : validation Kustomize → déploiement ArgoCD → vérification applicative → self-heal → sécurité.
+Tests de bout en bout : validation Kustomize → bootstrap ArgoCD → déploiement → tests fonctionnels → self-heal → sécurité.
 
-**Cluster :** minikube
+**Cluster :** k3d
 **Image déployée :** `kennethreitz/httpbin`
 **Environnements :** `dev` (1 replica) · `prod` (3 replicas)
 **Endpoint de santé :** `GET /get`
@@ -62,7 +62,7 @@ Chaque commande doit se terminer sans erreur et sans warning.
 - Probes sur `/get` (pas `/health`)
 
 **Infrastructure :**
-- Namespaces `todo-api-prod` et `monitoring` présents
+- Namespaces `todo-api-dev`, `todo-api-prod` et `monitoring` présents
 - RBAC : `ServiceAccount`, `Role`, `RoleBinding` dans `todo-api-prod`
 - `SealedSecret` présent avec `encryptedData`
 - `NetworkPolicy` ingress sur port `80`
@@ -114,7 +114,7 @@ kubectl get pods -n kube-system | grep sealed
 ```bash
 # Vérifier si le port 8080 est déjà utilisé
 lsof -i :8080 -sTCP:LISTEN
-# Si occupé par un kubectl précédent : kill <PID>
+# Si occupé : kill <PID>
 
 kubectl port-forward svc/argocd-server -n argocd 8080:443 &
 ARGOCD_PWD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
@@ -136,7 +136,7 @@ argocd app list
 
 ### 3.1 Attendre la synchronisation
 
-> Les apps synchonisent depuis `main`. Si les changements ne sont pas encore sur `main`, le statut sera `OutOfSync` — c'est normal.
+> Les apps synchronisent depuis `main`. Si les changements ne sont pas encore sur `main`, le statut sera `OutOfSync` — c'est normal.
 
 ```bash
 argocd app wait todo-api-dev --sync --health --timeout 180
@@ -152,8 +152,11 @@ kubectl -n todo-api-dev get deploy,po,svc -l app=todo-api
 
 **Attendu :**
 ```
-NAME                      READY   STATUS    RESTARTS
-pod/todo-api-<hash>       1/1     Running   0
+NAME                      READY   UP-TO-DATE   AVAILABLE
+deployment/todo-api       1/1     1            1
+
+NAME                          READY   STATUS    RESTARTS
+pod/todo-api-<hash>           1/1     Running   0
 
 NAME               TYPE        PORT(S)
 service/todo-api   ClusterIP   80/TCP
@@ -167,10 +170,13 @@ kubectl -n todo-api-prod get deploy,po,svc -l app=todo-api
 
 **Attendu :**
 ```
-NAME                    READY   STATUS    RESTARTS
-pod/todo-api-<hash>-0   1/1     Running   0
-pod/todo-api-<hash>-1   1/1     Running   0
-pod/todo-api-<hash>-2   1/1     Running   0
+NAME                      READY   UP-TO-DATE   AVAILABLE
+deployment/todo-api       3/3     3            3
+
+NAME                          READY   STATUS    RESTARTS
+pod/todo-api-<hash-1>         1/1     Running   0
+pod/todo-api-<hash-2>         1/1     Running   0
+pod/todo-api-<hash-3>         1/1     Running   0
 
 NAME               TYPE        PORT(S)
 service/todo-api   ClusterIP   80/TCP
@@ -201,7 +207,7 @@ kubectl get sealedsecrets -A
 
 ---
 
-## 4. Tests fonctionnels de l'application (httpbin)
+## 4. Tests fonctionnels (httpbin)
 
 `kennethreitz/httpbin` est un service HTTP de test. Chaque requête retourne les informations de la requête elle-même — pas d'état, pas de base de données.
 
@@ -216,20 +222,14 @@ curl -s http://localhost:3000/get
 curl -s http://localhost:3000/headers
 # Attendu : {"headers": {"Host": "localhost:3000", ...}}
 
-curl -s http://localhost:3000/ip
-# Attendu : {"origin": "..."}
-
-curl -s -X POST http://localhost:3000/post -H "Content-Type: application/json" -d '{"env": "dev", "test": true}'
-# Attendu : JSON avec json.env = "dev", json.test = true
+curl -s -X POST http://localhost:3000/post -H "Content-Type: application/json" -d '{"env":"dev","test":true}'
+# Attendu : json.env = "dev", json.test = true
 
 curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/status/200
 # Attendu : 200
 
 curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/status/404
 # Attendu : 404
-
-curl -s http://localhost:3000/delay/2
-# Attendu : réponse après ~2 secondes
 
 kill %1
 ```
@@ -242,8 +242,11 @@ kubectl port-forward svc/todo-api -n todo-api-prod 3001:80 &
 curl -s http://localhost:3001/get
 # Attendu : JSON valide, même comportement que dev
 
-curl -s -X POST http://localhost:3001/post -H "Content-Type: application/json" -d '{"env": "prod", "test": true}'
-# Attendu : json.env = "prod"
+curl -s -X POST http://localhost:3001/post -H "Content-Type: application/json" -d '{"env":"prod","test":true}'
+# Attendu : json.env = "prod", json.test = true
+
+curl -s -o /dev/null -w "%{http_code}" http://localhost:3001/status/200
+# Attendu : 200
 
 kill %1
 ```
@@ -254,94 +257,148 @@ kill %1
 kubectl port-forward svc/todo-api -n todo-api-dev 3000:80 &
 
 curl -s -X PUT http://localhost:3000/anything/custom-path -H "X-Custom-Header: gitops-test" -d "payload=test"
-# Attendu : json avec method=PUT, headers.X-Custom-Header=gitops-test
+# Attendu : method=PUT, headers.X-Custom-Header=gitops-test
 
 kill %1
 ```
 
 ---
 
-## 5. Test du self-heal et du prune ArgoCD
+## 5. Test sur branche feature (avant merge)
 
-### 5.1 Self-heal (correction de drift)
+Permet de tester les changements d'une branche avant de merger sur `main`.
+
+### 5.1 Pointer une app vers une branche feature
 
 ```bash
+# Pousser la branche sur GitHub en premier
+git push origin feature/ma-branche
+
+# Basculer l'app vers la branche de test
+argocd app set todo-api-prod --revision feature/ma-branche
+argocd app sync todo-api-prod
+
+# Vérifier la révision active
+argocd app get todo-api-prod | grep "Target\|Sync Revision"
+```
+
+### 5.2 Tester l'app sur la branche
+
+```bash
+kubectl port-forward svc/todo-api -n todo-api-prod 3001:80 &
+
+curl -s http://localhost:3001/get
+# Attendu : JSON valide avec les changements de la branche
+
+curl -s -X POST http://localhost:3001/post -H "Content-Type: application/json" -d '{"env":"prod","test":true}'
+# Attendu : json.env = "prod", json.test = true
+
+kill %1
+```
+
+### 5.3 Revenir sur `main` après validation
+
+```bash
+argocd app set todo-api-prod --revision main
+argocd app sync todo-api-prod
+
+# Si dev a aussi été basculé
+argocd app set todo-api-dev --revision main
+argocd app sync todo-api-dev
+```
+
+> **Règle :** ne jamais laisser une app pointée sur une branche feature en dehors des tests. Toujours remettre sur `main` avant de merger la PR.
+
+---
+
+## 6. Self-heal et auto-prune ArgoCD
+
+### 6.1 Self-heal (correction de drift)
+
+```bash
+# Introduire un drift manuellement
 kubectl -n todo-api-dev scale deployment todo-api --replicas=5
 kubectl -n todo-api-dev get deploy todo-api
 # Attendu temporaire : replicas = 5
 
+# Observer la correction automatique (~1 min)
 watch kubectl -n todo-api-dev get deploy todo-api
-# Attendu après ~1 minute : revient automatiquement à 1 replica (selfHeal ArgoCD)
+# Attendu : revient à 1 replica (selfHeal ArgoCD)
 ```
 
-### 5.2 Auto-prune (suppression des ressources orphelines)
+### 6.2 Auto-prune (suppression des ressources orphelines)
 
 ```bash
+# Créer une ressource hors GitOps
 kubectl -n todo-api-dev create configmap orphan-test --from-literal=key=value
 kubectl -n todo-api-dev get configmap orphan-test
 # Attendu : présente
 
-sleep 180
-kubectl -n todo-api-dev get configmap orphan-test
-# Attendu : Error from server (NotFound)
+# Observer la suppression automatique (~3 min)
+watch kubectl -n todo-api-dev get configmap orphan-test 2>&1
+# Attendu : Error from server (NotFound) — pruned par ArgoCD
 ```
 
 ---
 
-## 6. Tests sécurité
+## 7. Tests sécurité
 
-### 6.1 Absence de secrets en clair
+### 7.1 Absence de secrets en clair
 
 ```bash
 grep -r "password:\|token:\|apiKey:\|secret:" apps/ argocd/ infrastructure/ .github/ --include="*.yaml" | grep -v "secretKeyRef\|sealed\|encryptedData"
 # Attendu : aucune ligne
 ```
 
-### 6.2 Sealed Secrets
+### 7.2 Sealed Secrets
 
 ```bash
 kubectl get pods -n kube-system | grep sealed-secrets
-# Attendu : sealed-secrets-controller Running
+# Attendu : sealed-secrets-controller 1/1 Running
 
 kubectl get sealedsecrets -A
 # Attendu : todo-api-secret dans todo-api-prod
 ```
 
-### 6.3 Network Policies
+### 7.3 Network Policies
 
 ```bash
 kubectl get networkpolicies -n todo-api-prod
 kubectl describe networkpolicy todo-api-netpol -n todo-api-prod
-# Attendu : ingress sur port 80 depuis namespace environment=prod
+# Attendu : ingress sur port 80
 ```
 
-### 6.4 RBAC
+### 7.4 RBAC
 
 ```bash
 kubectl get roles,rolebindings -n todo-api-prod
 # Attendu : todo-api-role, todo-api-rolebinding, todo-api-sa
 ```
 
-### 6.5 Historique Git propre
+### 7.5 Historique Git propre
 
 ```bash
 git log --oneline -15
-# Vérifier : aucun "wip", "fix", "test" sans contexte
+# Vérifier : aucun commit "wip", "fix" ou "test" sans contexte
 ```
 
 ---
 
-## 7. Logs et diagnostic
+## 8. Logs et diagnostic
 
 ```bash
+# Logs applicatifs
 kubectl -n todo-api-dev logs -l app=todo-api --tail=50
 kubectl -n todo-api-prod logs -l app=todo-api --tail=50
 
+# Événements récents
 kubectl -n todo-api-dev get events --sort-by='.lastTimestamp' | tail -10
 kubectl -n todo-api-prod get events --sort-by='.lastTimestamp' | tail -10
 
+# Logs ArgoCD
 kubectl -n argocd logs deploy/argocd-application-controller --tail=30
 
+# Statut détaillé ArgoCD
 argocd app get todo-api-dev
 argocd app get todo-api-prod
 argocd app get infrastructure
@@ -349,7 +406,43 @@ argocd app get infrastructure
 
 ---
 
-## 8. Nettoyage
+## 9. Erreurs fréquentes et solutions
+
+### `spec.selector: field is immutable`
+
+ArgoCD ne peut pas patcher un Deployment dont le selector a changé.
+
+```bash
+kubectl -n todo-api-dev delete deploy todo-api
+kubectl -n todo-api-dev delete svc todo-api
+argocd app sync todo-api-dev
+```
+
+### `metadata.annotations: Too long`
+
+Utiliser l'option `--server-side` lors de l'installation ArgoCD :
+
+```bash
+kubectl apply -n argocd -f <url> --server-side
+```
+
+### Port déjà utilisé
+
+```bash
+lsof -i :8080 -sTCP:LISTEN
+kill <PID>
+```
+
+### App en `OutOfSync` après un changement de branche
+
+```bash
+argocd app set todo-api-prod --revision main
+argocd app sync todo-api-prod --force
+```
+
+---
+
+## 10. Nettoyage
 
 ```bash
 argocd app delete todo-api-dev todo-api-prod infrastructure --yes
@@ -373,10 +466,11 @@ kubectl delete ns todo-api-dev todo-api-prod
 | 9 | Pod prod running | `kubectl -n todo-api-prod get po` | 3/3 Running |
 | 10 | httpbin répond (dev) | `curl localhost:3000/get` | JSON valide |
 | 11 | httpbin répond (prod) | `curl localhost:3001/get` | JSON valide |
-| 12 | POST fonctionne | `curl -X POST .../post` | JSON avec body |
+| 12 | POST fonctionne | `curl -X POST .../post -d '{"env":"prod"}'` | json.env = "prod" |
 | 13 | Codes HTTP | `curl .../status/200` et `.../status/404` | 200 et 404 |
-| 14 | Self-heal | Scale manuel → watch | Revient à 1 replica |
-| 15 | Auto-prune | ConfigMap orphelin | Supprimé par ArgoCD |
-| 16 | Sealed Secrets déployé | `kubectl get sealedsecrets -A` | todo-api-secret présent |
-| 17 | Network Policies | `kubectl get netpol -A` | Présente dans todo-api-prod |
-| 18 | Historique Git | `git log --oneline` | Commits propres |
+| 14 | Test branche feature | `argocd app set ... --revision feature/xxx` | Sync sur la branche |
+| 15 | Self-heal | Scale manuel → watch | Revient à la valeur Git |
+| 16 | Auto-prune | ConfigMap orphelin | Supprimé par ArgoCD |
+| 17 | Sealed Secrets déployé | `kubectl get sealedsecrets -A` | todo-api-secret présent |
+| 18 | Network Policies | `kubectl get netpol -A` | Présente dans todo-api-prod |
+| 19 | Historique Git | `git log --oneline` | Commits propres |
