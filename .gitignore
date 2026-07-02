@@ -74,9 +74,10 @@ secret.yaml
 *-secret.plain.yaml
 
 # ─────────────────────────────────────
-# Claude Code (settings locaux uniquement)
+# Claude Code (ne pas versionner)
 # ─────────────────────────────────────
-.claude/settings.local.json
+.claude/
+CLAUDE.md
 
 # ─────────────────────────────────────
 # Fichiers temporaires
