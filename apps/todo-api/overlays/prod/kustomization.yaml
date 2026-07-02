@@ -4,11 +4,12 @@ kind: Kustomization
 resources:
 - ../../base
 
-namespace: todo-api-dev
+namespace: todo-api-prod
 
 labels:
 - pairs:
-    environment: dev
+    environment: prod
+    tier: production
   includeSelectors: true
 
 patches:
